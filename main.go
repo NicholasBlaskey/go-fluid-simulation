@@ -4,6 +4,11 @@ import (
 	"log"
 	"unsafe"
 
+	"image"
+	"image/draw"
+	_ "image/png"
+	"os"
+
 	mgl "github.com/go-gl/mathgl/mgl32"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
@@ -199,15 +204,66 @@ func (s Shader) Use() {
 	gl.UseProgram(s.ID)
 }
 
-// Create shaders (IGNORE keywords for now)
-// ~/Desktop/ghome/WebGL-Fluid-Simulation/
-//	ourShader := shader.MakeShaders("10.1.instancing.vs",
-//		"10.1.instancing.fs")
-// ~/Desktop/ghome/GOPATH/src/github.com/nicholasblaskey/go-learn-opengl/includes/shader/shader.go
-//
 // Create framebuffers
 
 // Load in dithering texture
+type texture struct {
+	texture uint32
+	width   int32
+	height  int32
+}
+
+func (t *texture) attach(id uint32) uint32 {
+	gl.ActiveTexture(gl.TEXTURE0 + id)
+	gl.BindTexture(gl.TEXTURE_2D, t.texture)
+	return id
+}
+
+func createTexture(path string) *texture {
+	var textureID uint32
+	gl.GenTextures(1, &textureID)
+	gl.BindTexture(gl.TEXTURE_2D, textureID)
+
+	file, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		panic(err)
+	}
+
+	data := image.NewRGBA(img.Bounds())
+	if data.Stride != data.Rect.Size().X*4 {
+		panic("Unsupported stride")
+	}
+	draw.Draw(data, data.Bounds(), img, image.Point{0, 0}, draw.Src)
+
+	width, height := int32(data.Rect.Size().X), int32(data.Rect.Size().Y)
+	gl.BindTexture(gl.TEXTURE_2D, textureID)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA,
+		width,
+		height,
+		0,
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		gl.Ptr(data.Pix))
+	gl.GenerateMipmap(gl.TEXTURE_2D)
+
+	// Set texture parameters for wrapping
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER,
+		gl.LINEAR_MIPMAP_LINEAR)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+	return &texture{textureID, width, height}
+}
 
 // Render function
 
@@ -224,6 +280,10 @@ func main() {
 	// Create material
 	displayMaterial := newMaterial("place", "place")
 	log.Println(displayMaterial)
+
+	// Load in dithering texture
+	ditheringTexture := createTexture("LDR_LLL1_0.png")
+	log.Println(ditheringTexture)
 
 	for !window.ShouldClose() {
 		gl.ClearColor(0.3, 0.5, 0.3, 1.0)
