@@ -1,12 +1,16 @@
 package main
 
 import (
+	"log"
+	"unsafe"
+
 	mgl "github.com/go-gl/mathgl/mgl32"
 
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
+// We will move everything to its own module later on
 // Create window
 func initGLFW(windowTitle string, width, height int) *glfw.Window {
 	if err := glfw.Init(); err != nil {
@@ -103,12 +107,104 @@ var config = struct {
 	SUNRAYS_WEIGHT:       1.0,
 }
 
-// Pointer prototype?
-
 // Material
+type material struct {
+	vertexSource   string
+	fragmentSource string
+	activeProgram  *Shader
+	uniforms       []string
+	origFragSource string // Source stored with no flags enabled
+}
+
+func newMaterial(vsSource, fsSource string) *material {
+	return &material{vsSource, fsSource, nil, []string{}, fsSource}
+}
+
+func (m *material) setKeywords(keywords []string) {
+	// Simplying here because we are gonna assume we arent gonna change params
+	// much if all at compile time so we can take the preformance hit of
+	// recompling programs.
+	m.fragmentSource = m.origFragSource
+	for _, keyword := range keywords {
+		m.fragmentSource = "#define " + keyword + "\n" + m.fragmentSource
+	}
+
+	m.activeProgram = MakeShaders(m.vertexSource, m.fragmentSource)
+	// TODO uniforms
+}
+
+func (m *material) bind() {
+	m.activeProgram.Use()
+}
+
+type Shader struct {
+	ID uint32
+}
+
+func MakeShaders(vertexCode, fragmentCode string) *Shader {
+	// Compile the shaders
+	vertexShader := gl.CreateShader(gl.VERTEX_SHADER)
+	shaderSource, freeVertex := gl.Strs(vertexCode + "\x00")
+	defer freeVertex()
+	gl.ShaderSource(vertexShader, 1, shaderSource, nil)
+	gl.CompileShader(vertexShader)
+	checkCompileErrors(vertexShader, "VERTEX")
+
+	fragmentShader := gl.CreateShader(gl.FRAGMENT_SHADER)
+	shaderSource, freeFragment := gl.Strs(fragmentCode + "\x00")
+	defer freeFragment()
+	gl.ShaderSource(fragmentShader, 1, shaderSource, nil)
+	gl.CompileShader(fragmentShader)
+	checkCompileErrors(fragmentShader, "FRAGMENT")
+
+	// Create a shader program
+	ID := gl.CreateProgram()
+	gl.AttachShader(ID, vertexShader)
+	gl.AttachShader(ID, fragmentShader)
+	gl.LinkProgram(ID)
+
+	checkCompileErrors(ID, "PROGRAM")
+
+	// Delete shaders
+	gl.DeleteShader(vertexShader)
+	gl.DeleteShader(fragmentShader)
+
+	return &Shader{ID: ID}
+}
+
+func checkCompileErrors(shader uint32, shaderType string) {
+	var success int32
+	var infoLog [1024]byte
+
+	var status uint32 = gl.COMPILE_STATUS
+	stageMessage := "Shader_Compilation_error"
+	errorFunc := gl.GetShaderInfoLog
+	getIV := gl.GetShaderiv
+	if shaderType == "PROGRAM" {
+		status = gl.LINK_STATUS
+		stageMessage = "Program_link_error"
+		errorFunc = gl.GetProgramInfoLog
+		getIV = gl.GetProgramiv
+	}
+
+	getIV(shader, status, &success)
+	if success != 1 {
+		test := &success
+		errorFunc(shader, 1024, test, (*uint8)(unsafe.Pointer(&infoLog)))
+		log.Fatalln(stageMessage + shaderType + "|" + string(infoLog[:1024]) + "|")
+	}
+}
+
+func (s Shader) Use() {
+	gl.UseProgram(s.ID)
+}
 
 // Create shaders (IGNORE keywords for now)
-
+// ~/Desktop/ghome/WebGL-Fluid-Simulation/
+//	ourShader := shader.MakeShaders("10.1.instancing.vs",
+//		"10.1.instancing.fs")
+// ~/Desktop/ghome/GOPATH/src/github.com/nicholasblaskey/go-learn-opengl/includes/shader/shader.go
+//
 // Create framebuffers
 
 // Load in dithering texture
@@ -122,9 +218,24 @@ func main() {
 	// Create window
 	window := initGLFW("Fluid sim", 500, 500)
 
+	// Create shaders
+	// TODO
+
+	// Create material
+	displayMaterial := newMaterial("place", "place")
+	log.Println(displayMaterial)
+
 	for !window.ShouldClose() {
 		gl.ClearColor(0.3, 0.5, 0.3, 1.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+
+		// update parms
+
+		// Wait / deal with dt
+
+		// Step func
+
+		// Render
 
 		window.SwapBuffers()
 		glfw.PollEvents()
