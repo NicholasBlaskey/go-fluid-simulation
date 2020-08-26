@@ -217,11 +217,11 @@ func (s Shader) Use() {
 // Create framebuffers
 
 type framebuffers struct {
-	dye        doubleFramebuffer
-	velocity   doubleFramebuffer
-	divergence framebuffer
-	curl       framebuffer
-	pressure   framebuffer
+	dye        *doubleFramebuffer
+	velocity   *doubleFramebuffer
+	divergence *framebuffer
+	curl       *framebuffer
+	pressure   *framebuffer
 }
 
 type framebuffer struct {
@@ -244,15 +244,15 @@ type doubleFramebuffer struct {
 	height     int
 	texelSizeX float32
 	texelSizeY float32
-	fbo1       framebuffer
-	fbo2       framebuffer
+	fbo1       *framebuffer
+	fbo2       *framebuffer
 }
 
-func (df *doubleFramebuffer) read() framebuffer {
+func (df *doubleFramebuffer) read() *framebuffer {
 	return df.fbo1
 }
 
-func (df *doubleFramebuffer) write(f framebuffer) {
+func (df *doubleFramebuffer) write(f *framebuffer) {
 	df.fbo2 = f
 }
 
@@ -262,7 +262,7 @@ func (df *doubleFramebuffer) swap() {
 	df.fbo2 = temp
 }
 
-func initFramebuffers() {
+func initFramebuffers() *framebuffers {
 	simResX, simResY := getResolution(config.SIM_RESOLUTION)
 	dyeResX, dyeResY := getResolution(config.DYE_RESOLUTION)
 
@@ -271,11 +271,11 @@ func initFramebuffers() {
 	// Assuming we support this?
 	// gl.getExtension('EXT_color_buffer_float');
 	// supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
-	texType := gl.HALF_FLOAT
-	rgbaInt, rgba := gl.RGBA16F, gl.RGBA
-	rgInt, rg := gl.RG16F, gl.RG
-	rInt, r := gl.R16F, gl.RED
-	filtering := gl.LINEAR
+	texType := uint32(gl.HALF_FLOAT)
+	rgbaInt, rgba := uint32(gl.RGBA16F), uint32(gl.RGBA)
+	rgInt, rg := uint32(gl.RG16F), uint32(gl.RG)
+	rInt, r := uint32(gl.R16F), uint32(gl.RED)
+	filtering := int32(gl.LINEAR)
 
 	gl.Disable(gl.BLEND)
 
@@ -288,6 +288,46 @@ func initFramebuffers() {
 
 	//divergence :=
 	// TODO states
+
+	return &framebuffers{dye, velocity, divergence, curl, pressure}
+}
+
+func createFBO(w, h int, internalFormat, format, texType uint32, param int32) *framebuffer {
+	var texture uint32
+	gl.GenTextures(1, &texture)
+	gl.BindTexture(gl.TEXTURE_2D, texture)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, param)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, param)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+	gl.TexImage2D(gl.TEXTURE_2D, 0, int32(internalFormat), int32(w), int32(h),
+		0, format, texType, gl.Ptr(nil))
+	// 	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+	//      gl.TEXTURE_2D, textureColorbuffer, 0)
+
+	var fbo uint32
+	gl.GenFramebuffers(1, &fbo)
+	gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
+	gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+		gl.TEXTURE_2D, texture, 0)
+	gl.Viewport(0, 0, int32(w), int32(h))
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+
+	// TODO check
+	if gl.CheckFramebufferStatus(gl.FRAMEBUFFER) != gl.FRAMEBUFFER_COMPLETE {
+		panic(gl.CheckFramebufferStatus(gl.FRAMEBUFFER))
+		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	}
+	return &framebuffer{texture, fbo, w, h, 1.0 / float32(w), 1.0 / float32(h)}
+}
+
+func createDoubleFBO(w, h int, internalFormat, format,
+	texType uint32, param int32) *doubleFramebuffer {
+
+	fbo1 := createFBO(w, h, internalFormat, format, texType, param)
+	fbo2 := createFBO(w, h, internalFormat, format, texType, param)
+
+	return &doubleFramebuffer{w, h, fbo1.texelSizeX, fbo2.texelSizeY, fbo1, fbo2}
 }
 
 func getResolution(resolution int) (int, int) {
@@ -481,9 +521,13 @@ void main()
 	// Load in dithering texture
 	ditheringTexture := createTexture("LDR_LLL1_0.png")
 
-	initFramebuffers()
-
 	// Create frame buffers
+	// NOTE we do get a weird issue with the texture being rendered small in the
+	// bottom left corner however I think this might be a view port issue.
+	// When the window resizies this issue corrects itself.
+	// It is a viewport issue.
+	initFramebuffers()
+	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 
 	for !window.ShouldClose() {
 		gl.ClearColor(0.3, 0.5, 0.3, 1.0)
