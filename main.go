@@ -20,6 +20,11 @@ func init() {
 	runtime.LockOSThread()
 }
 
+const (
+	width  = 500
+	height = 500
+)
+
 // We will move everything to its own module later on
 // Create window
 func initGLFW(windowTitle string, width, height int) *glfw.Window {
@@ -211,6 +216,95 @@ func (s Shader) Use() {
 
 // Create framebuffers
 
+type framebuffers struct {
+	dye        doubleFramebuffer
+	velocity   doubleFramebuffer
+	divergence framebuffer
+	curl       framebuffer
+	pressure   framebuffer
+}
+
+type framebuffer struct {
+	texture    uint32
+	fbo        uint32
+	width      int
+	height     int
+	texelSizeX float32
+	texelSizeY float32
+}
+
+func (f *framebuffer) attach(id uint32) uint32 {
+	gl.ActiveTexture(gl.TEXTURE0 + id)
+	gl.BindTexture(gl.TEXTURE_2D, f.texture)
+	return id
+}
+
+type doubleFramebuffer struct {
+	width      int
+	height     int
+	texelSizeX float32
+	texelSizeY float32
+	fbo1       framebuffer
+	fbo2       framebuffer
+}
+
+func (df *doubleFramebuffer) read() framebuffer {
+	return df.fbo1
+}
+
+func (df *doubleFramebuffer) write(f framebuffer) {
+	df.fbo2 = f
+}
+
+func (df *doubleFramebuffer) swap() {
+	temp := df.fbo1
+	df.fbo1 = df.fbo2
+	df.fbo2 = temp
+}
+
+func initFramebuffers() {
+	simResX, simResY := getResolution(config.SIM_RESOLUTION)
+	dyeResX, dyeResY := getResolution(config.DYE_RESOLUTION)
+
+	//log.Println(simResX, simResY, dyeResX, dyeResY)
+
+	// Assuming we support this?
+	// gl.getExtension('EXT_color_buffer_float');
+	// supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
+	texType := gl.HALF_FLOAT
+	rgbaInt, rgba := gl.RGBA16F, gl.RGBA
+	rgInt, rg := gl.RG16F, gl.RG
+	rInt, r := gl.R16F, gl.RED
+	filtering := gl.LINEAR
+
+	gl.Disable(gl.BLEND)
+
+	dye := createDoubleFBO(dyeResX, dyeResY, rgbaInt, rgba, texType, filtering)
+	velocity := createDoubleFBO(simResX, simResY, rgInt, rg, texType, filtering)
+
+	divergence := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
+	curl := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
+	pressure := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
+
+	//divergence :=
+	// TODO states
+}
+
+func getResolution(resolution int) (int, int) {
+	aspectRatio := float32(width) / float32(height)
+	if aspectRatio < 1.0 {
+		aspectRatio = 1.0 / aspectRatio
+	}
+
+	min := int(resolution)
+	max := int(float32(resolution) * aspectRatio)
+
+	if width > height {
+		return max, height
+	}
+	return min, max
+}
+
 // Load in dithering texture
 type texture struct {
 	texture uint32
@@ -315,7 +409,7 @@ func main() {
 // Program to test shader and texture functions
 func test() {
 	// Create window
-	window := initGLFW("Fluid sim", 500, 500)
+	window := initGLFW("Fluid sim", width, height)
 
 	// Create buffers
 	vertices := []float32{
@@ -386,6 +480,8 @@ void main()
 
 	// Load in dithering texture
 	ditheringTexture := createTexture("LDR_LLL1_0.png")
+
+	initFramebuffers()
 
 	// Create frame buffers
 
