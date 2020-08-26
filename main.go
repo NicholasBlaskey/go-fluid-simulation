@@ -238,14 +238,18 @@ const baseVertexShader = `
 `
 
 const curlShader = `
+    #version 410 core
+
     precision mediump float;
     precision mediump sampler2D;
 
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
+    out vec4 FragColor;
+
+    in highp vec2 vUv;
+    in highp vec2 vL;
+    in highp vec2 vR;
+    in highp vec2 vT;
+    in highp vec2 vB;
     uniform sampler2D uVelocity;
 
     void main () {
@@ -254,19 +258,23 @@ const curlShader = `
         float T = texture2D(uVelocity, vT).x;
         float B = texture2D(uVelocity, vB).x;
         float vorticity = R - L - T + B;
-        gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
+        FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
     }
 `
 
 const vorticityShader = `
+    #version 410 core
+ 
     precision highp float;
     precision highp sampler2D;
 
-    varying vec2 vUv;
-    varying vec2 vL;
-    varying vec2 vR;
-    varying vec2 vT;
-    varying vec2 vB;
+    out vec4 FragColor;
+
+    in vec2 vUv;
+    in vec2 vL;
+    in vec2 vR;
+    in vec2 vT;
+    in vec2 vB;
     uniform sampler2D uVelocity;
     uniform sampler2D uCurl;
     uniform float curl;
@@ -287,19 +295,23 @@ const vorticityShader = `
         vec2 velocity = texture2D(uVelocity, vUv).xy;
         velocity += force * dt;
         velocity = min(max(velocity, -1000.0), 1000.0);
-        gl_FragColor = vec4(velocity, 0.0, 1.0);
+        FragColor = vec4(velocity, 0.0, 1.0);
     }
 `
 
 const divergenceShader = `
+    #version 410 core
+
     precision mediump float;
     precision mediump sampler2D;
 
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
+    out vec4 FragColor;
+
+    in highp vec2 vUv;
+    in highp vec2 vL;
+    in highp vec2 vR;
+    in highp vec2 vT;
+    in highp vec2 vB;
     uniform sampler2D uVelocity;
 
     void main () {
@@ -315,32 +327,40 @@ const divergenceShader = `
         if (vB.y < 0.0) { B = -C.y; }
 
         float div = 0.5 * (R - L + T - B);
-        gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+        FragColor = vec4(div, 0.0, 0.0, 1.0);
     }
 `
 
 const clearShader = `
+    #version 410 core
+
     precision mediump float;
     precision mediump sampler2D;
 
-    varying highp vec2 vUv;
+    out vec4 FragColor;
+
+    in highp vec2 vUv;
     uniform sampler2D uTexture;
     uniform float value;
 
     void main () {
-        gl_FragColor = value * texture2D(uTexture, vUv);
+        FragColor = value * texture2D(uTexture, vUv);
     }
 `
 
 const pressureShader = `
+    #version 410 core
+
     precision mediump float;
     precision mediump sampler2D;
 
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
+    out vec4 FragColor;
+
+    in highp vec2 vUv;
+    in highp vec2 vL;
+    in highp vec2 vR;
+    in highp vec2 vT;
+    in highp vec2 vB;
     uniform sampler2D uPressure;
     uniform sampler2D uDivergence;
 
@@ -352,19 +372,23 @@ const pressureShader = `
         float C = texture2D(uPressure, vUv).x;
         float divergence = texture2D(uDivergence, vUv).x;
         float pressure = (L + R + B + T - divergence) * 0.25;
-        gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
+        FragColor = vec4(pressure, 0.0, 0.0, 1.0);
     }
 `
 
 const gradientSubtractShader = `
+    #version 410 core
+
     precision mediump float;
     precision mediump sampler2D;
 
-    varying highp vec2 vUv;
-    varying highp vec2 vL;
-    varying highp vec2 vR;
-    varying highp vec2 vT;
-    varying highp vec2 vB;
+    out vec4 FragColor;
+
+    in highp vec2 vUv;
+    in highp vec2 vL;
+    in highp vec2 vR;
+    in highp vec2 vT;
+    in highp vec2 vB;
     uniform sampler2D uPressure;
     uniform sampler2D uVelocity;
 
@@ -375,15 +399,19 @@ const gradientSubtractShader = `
         float B = texture2D(uPressure, vB).x;
         vec2 velocity = texture2D(uVelocity, vUv).xy;
         velocity.xy -= vec2(R - L, T - B);
-        gl_FragColor = vec4(velocity, 0.0, 1.0);
+        FragColor = vec4(velocity, 0.0, 1.0);
     }
 `
 
 const advectionShader = `
+    #version 410 core
+
     precision highp float;
     precision highp sampler2D;
 
-    varying vec2 vUv;
+    out vec4 FragColor;
+
+    in vec2 vUv;
     uniform sampler2D uVelocity;
     uniform sampler2D uSource;
     uniform vec2 texelSize;
@@ -414,29 +442,37 @@ const advectionShader = `
         vec4 result = texture2D(uSource, coord);
     #endif
         float decay = 1.0 + dissipation * dt;
-        gl_FragColor = result / decay;
+        FragColor = result / decay;
     }
 `
 
 const colorShader = `
+    #version 410 core
+
     precision mediump float;
+
+    out vec4 FragColor;
 
     uniform vec4 color;
 
     void main () {
-        gl_FragColor = color;
+        FragColor = color;
     }
 `
 
-const displayShaderSource = `
+const displayShader = `
+    #version 410 core
+
     precision highp float;
     precision highp sampler2D;
 
-    varying vec2 vUv;
-    varying vec2 vL;
-    varying vec2 vR;
-    varying vec2 vT;
-    varying vec2 vB;
+    out vec4 FragColor;
+
+    in vec2 vUv;
+    in vec2 vL;
+    in vec2 vR;
+    in vec2 vT;
+    in vec2 vB;
     uniform sampler2D uTexture;
     uniform sampler2D uBloom;
     uniform sampler2D uSunrays;
@@ -489,16 +525,20 @@ const displayShaderSource = `
     #endif
 
         float a = max(c.r, max(c.g, c.b));
-        gl_FragColor = vec4(c, a);
+        FragColor = vec4(c, a);
     }
 `
 
 // Used in adding dye and motion to simulation
 const splatShader = `
+    #version 410 core
+
     precision highp float;
     precision highp sampler2D;
 
-    varying vec2 vUv;
+    out vec4 FragColor;
+
+    in vec2 vUv;
     uniform sampler2D uTarget;
     uniform float aspectRatio;
     uniform vec3 color;
@@ -510,7 +550,7 @@ const splatShader = `
         p.x *= aspectRatio;
         vec3 splat = exp(-dot(p, p) / radius) * color;
         vec3 base = texture2D(uTarget, vUv).xyz;
-        gl_FragColor = vec4(base + splat, 1.0);
+        FragColor = vec4(base + splat, 1.0);
     }
 `
 
@@ -712,7 +752,16 @@ func main() {
 	window := initGLFW("Fluid sim", width, height)
 	_ = window
 
-	newMaterial(baseVertexShader, "hey").setKeywords(nil)
+	MakeShaders(baseVertexShader, curlShader)
+	MakeShaders(baseVertexShader, vorticityShader)
+	MakeShaders(baseVertexShader, divergenceShader)
+	MakeShaders(baseVertexShader, clearShader)
+	MakeShaders(baseVertexShader, pressureShader)
+	MakeShaders(baseVertexShader, gradientSubtractShader)
+	MakeShaders(baseVertexShader, advectionShader)
+	MakeShaders(baseVertexShader, colorShader)
+	MakeShaders(baseVertexShader, displayShader)
+	MakeShaders(baseVertexShader, splatShader)
 
 	//test()
 	/*
