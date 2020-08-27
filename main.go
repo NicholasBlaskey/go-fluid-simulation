@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"runtime"
@@ -22,8 +23,8 @@ func init() {
 }
 
 const (
-	width  = 500
-	height = 500
+	width  = 512
+	height = 512
 )
 
 // We will move everything to its own module later on
@@ -96,9 +97,9 @@ var config = struct {
 	SUNRAYS_RESOLUTION   int
 	SUNRAYS_WEIGHT       float32
 }{
-	SIM_RESOLUTION:       128,
-	DYE_RESOLUTION:       1024,
-	CAPTURE_RESOLUTION:   512,
+	SIM_RESOLUTION:       512, // 128,
+	DYE_RESOLUTION:       512, //1024,
+	CAPTURE_RESOLUTION:   512, //512,
 	DENSITY_DISSIPATION:  1,
 	VELOCITY_DISSIPATION: 0.2,
 	PRESSURE:             0.8,
@@ -940,7 +941,7 @@ func step(programs *shaders, fbos *framebuffers, dt float32) {
 	programs.advection.SetInt("uVelocity", int32(fbos.dye.read().attach(1)))
 	programs.advection.SetFloat("dissipation", config.DENSITY_DISSIPATION)
 	blit(fbos.dye.write())
-	//	fbos.dye.swap()
+	fbos.dye.swap()
 }
 
 // Splats
@@ -950,9 +951,19 @@ func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
 		mgl.Vec3{0.3, 0.5, 0.3},
 		mgl.Vec3{0.3, 0.3, 0.5},
 
-		mgl.Vec3{0.5, 0.3, 0.3},
-		mgl.Vec3{0.3, 0.5, 0.3},
-		mgl.Vec3{0.3, 0.3, 0.5},
+		/*
+			mgl.Vec3{0.5, 0.3, 0.3},
+			mgl.Vec3{0.3, 0.5, 0.3},
+			mgl.Vec3{0.3, 0.3, 0.5},
+
+			mgl.Vec3{0.5, 0.3, 0.3},
+			mgl.Vec3{0.3, 0.5, 0.3},
+			mgl.Vec3{0.3, 0.3, 0.5},
+
+			mgl.Vec3{0.5, 0.3, 0.3},
+			mgl.Vec3{0.3, 0.5, 0.3},
+			mgl.Vec3{0.3, 0.3, 0.5},
+		*/
 	}
 
 	for _, col := range cols {
@@ -987,7 +998,7 @@ func correctRadius(r float32) float32 {
 	if aspectRatio > 1 {
 		r *= aspectRatio
 	}
-	return r + 0.02
+	return r
 }
 
 // Run simulation
@@ -1016,8 +1027,12 @@ func main() {
 	multipleSplats(programs, fbos, 3)
 	//}
 
+	lastTime := 0.0
+	numFrames := 0.0
 	prev := float32(glfw.GetTime())
 	for !window.ShouldClose() {
+		lastTime, numFrames = DisplayFrameRate(window, "", numFrames, lastTime)
+
 		prev = update(programs, fbos, displayMaterial, prev)
 
 		window.SwapBuffers()
@@ -1036,4 +1051,19 @@ func main() {
 			glfw.PollEvents()
 		}
 	*/
+}
+
+func DisplayFrameRate(window *glfw.Window, title string,
+	numFrames, lastTime float64) (float64, float64) {
+
+	currentTime := glfw.GetTime()
+	delta := currentTime - lastTime
+	numFrames += 1
+	if delta >= 1.0 {
+		window.SetTitle(fmt.Sprintf(title+" fps=%f", numFrames/delta))
+		numFrames = 0
+		lastTime = currentTime
+	}
+
+	return lastTime, numFrames
 }
