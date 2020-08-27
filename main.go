@@ -744,6 +744,86 @@ func createTexture(path string) *texture {
 }
 
 // Render function
+func initBlit() {
+	var VAO, VBO, EBO uint32
+	gl.GenVertexArrays(1, &VAO)
+	gl.GenBuffers(1, &VBO)
+	gl.GenBuffers(1, &EBO)
+
+	gl.BindVertexArray(VAO)
+
+	vertices := []float32{-1, -1, -1, 1, 1, 1, 1, -1}
+	gl.BindBuffer(gl.ARRAY_BUFFER, VBO)
+	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4,
+		gl.Ptr(vertices), gl.STATIC_DRAW)
+	gl.VertexAttribPointer(0, 2, gl.FLOAT, false, 0, gl.PtrOffset(0)) // is the 0 right? No offset?
+	gl.EnableVertexAttribArray(0)
+
+	eboVertices := []uint16{0, 1, 2, 0, 2, 3}
+	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, EBO)
+	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(eboVertices)*2,
+		gl.Ptr(eboVertices), gl.STATIC_DRAW)
+}
+
+func blit(target *framebuffer) {
+	gl.Viewport(0, 0, width, height)
+	if target == nil {
+		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
+	} else {
+		gl.BindFramebuffer(gl.FRAMEBUFFER, target.fbo)
+	}
+
+	/*
+		if clear {
+			gl.ClearColor(0.0, 0.0, 0.0, 1.0)
+			gl.Clear(gl.COLOR_BUFFER_BIT)
+		}
+	*/
+
+	// gl.BindVertexArray(VAO)
+	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, gl.PtrOffset(0))
+}
+
+func update(lastUpdateTime float32) {
+	for {
+		dt, lastUpdateTime := calcDeltaTime(lastUpdateTime)
+
+		// TODO resize
+
+		//updateColors(dt)
+
+		// TODO inputs
+
+		//step(dt)
+		//render()
+	}
+}
+func calcDeltaTime(lastUpdateTime float32) (float32, float32) {
+	now := float32(glfw.GetTime())
+	dt := (now - lastUpdateTime) / 1000
+	if dt < 0.016666 {
+		dt = 0.016666
+	}
+
+	return dt, now
+}
+
+func render() {
+	gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
+	gl.Enable(gl.BLEND)
+
+	//drawColor(nil, normalizeColor(config)) // TODO
+
+	drawDisplay()
+}
+
+func drawDisplay() {
+	//displayMaterial.bind()
+
+	//gl.uniform1i(displayMaterial.uniforms.uTexture, dye.read.attach(0));
+
+	//blit(target)
+}
 
 // Step function
 
@@ -752,16 +832,18 @@ func main() {
 	window := initGLFW("Fluid sim", width, height)
 	_ = window
 
-	MakeShaders(baseVertexShader, curlShader)
-	MakeShaders(baseVertexShader, vorticityShader)
-	MakeShaders(baseVertexShader, divergenceShader)
-	MakeShaders(baseVertexShader, clearShader)
-	MakeShaders(baseVertexShader, pressureShader)
-	MakeShaders(baseVertexShader, gradientSubtractShader)
-	MakeShaders(baseVertexShader, advectionShader)
-	MakeShaders(baseVertexShader, colorShader)
-	MakeShaders(baseVertexShader, displayShader)
-	MakeShaders(baseVertexShader, splatShader)
+	/*
+		MakeShaders(baseVertexShader, curlShader)
+		MakeShaders(baseVertexShader, vorticityShader)
+		MakeShaders(baseVertexShader, divergenceShader)
+		MakeShaders(baseVertexShader, clearShader)
+		MakeShaders(baseVertexShader, pressureShader)
+		MakeShaders(baseVertexShader, gradientSubtractShader)
+		MakeShaders(baseVertexShader, advectionShader)
+		MakeShaders(baseVertexShader, colorShader)
+		MakeShaders(baseVertexShader, displayShader)
+		MakeShaders(baseVertexShader, splatShader)
+	*/
 
 	//test()
 	/*
