@@ -73,11 +73,11 @@ var config = struct {
 	SIM_RESOLUTION       int
 	DYE_RESOLUTION       int
 	CAPTURE_RESOLUTION   int
-	DENSITY_DISSIPATION  int
+	DENSITY_DISSIPATION  float32
 	VELOCITY_DISSIPATION float32
 	PRESSURE             float32
 	PRESSURE_ITERATIONS  int
-	CURL                 int
+	CURL                 float32
 	SPLAT_RADIUS         float32
 	SPLAT_FORCE          int
 	SHADING              bool
@@ -103,7 +103,7 @@ var config = struct {
 	VELOCITY_DISSIPATION: 0.2,
 	PRESSURE:             0.8,
 	PRESSURE_ITERATIONS:  20,
-	CURL:                 30,
+	CURL:                 30.0,
 	SPLAT_RADIUS:         0.25,
 	SPLAT_FORCE:          6000,
 	SHADING:              true,
@@ -597,7 +597,7 @@ type framebuffers struct {
 	velocity   *doubleFramebuffer
 	divergence *framebuffer
 	curl       *framebuffer
-	pressure   *framebuffer
+	pressure   *doubleFramebuffer
 }
 
 type framebuffer struct {
@@ -664,7 +664,7 @@ func initFramebuffers() *framebuffers {
 
 	divergence := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
 	curl := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
-	pressure := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
+	pressure := createDoubleFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
 
 	//divergence :=
 	// TODO states
@@ -838,7 +838,7 @@ func update(programs *shaders, fbos *framebuffers,
 	//updateColors(dt)
 	// TODO inputs (or maybe not)
 
-	//step(dt)
+	step(programs, fbos, dt)
 	render(programs, fbos, displayMaterial)
 
 	return lastUpdateTime
@@ -878,6 +878,70 @@ func drawDisplay(displayMaterial *material, fbos *framebuffers) {
 }
 
 // Step function
+func step(programs *shaders, fbos *framebuffers, dt float32) {
+	texelSize := mgl.Vec2{fbos.velocity.texelSizeX, fbos.velocity.texelSizeY}
+
+	gl.Disable(gl.BLEND)
+
+	programs.curl.Use()
+	programs.curl.SetVec2("texelSize", texelSize)
+	programs.curl.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
+	blit(fbos.curl)
+
+	programs.vorticity.Use()
+	programs.vorticity.SetVec2("texelSize", texelSize)
+	programs.vorticity.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
+	programs.vorticity.SetInt("uCurl", int32(fbos.curl.attach(1)))
+	programs.vorticity.SetFloat("curl", config.CURL)
+	programs.vorticity.SetFloat("dt", dt)
+	blit(fbos.velocity.write())
+	fbos.velocity.swap()
+
+	programs.divergence.Use()
+	programs.divergence.SetVec2("texelSize", texelSize)
+	programs.divergence.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
+	blit(fbos.divergence)
+
+	programs.clear.Use()
+	programs.clear.SetInt("uTexture", int32(fbos.pressure.read().attach(0)))
+	programs.clear.SetFloat("value", config.PRESSURE)
+	blit(fbos.pressure.write())
+	fbos.pressure.swap()
+
+	programs.pressure.Use()
+	programs.pressure.SetVec2("texelSize", texelSize)
+	programs.pressure.SetInt("uDivergence", int32(fbos.divergence.attach(0)))
+	for i := 0; i < config.PRESSURE_ITERATIONS; i++ {
+		programs.pressure.SetInt("uPressure", int32(fbos.pressure.read().attach(1)))
+		blit(fbos.pressure.write())
+		fbos.pressure.swap()
+	}
+
+	programs.gradientSubtract.Use()
+	programs.gradientSubtract.SetVec2("texelSize", texelSize)
+	programs.gradientSubtract.SetInt("uPressure", int32(fbos.pressure.read().attach(0)))
+	programs.gradientSubtract.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
+	blit(fbos.velocity.write())
+	fbos.velocity.swap()
+
+	programs.advection.Use()
+	programs.advection.SetVec2("texelSize", texelSize)
+	// TODO not support linear but we should be good
+	velocityID := int32(fbos.velocity.read().attach(0))
+	programs.advection.SetInt("uVelocity", velocityID)
+	programs.advection.SetInt("uSource", velocityID)
+	programs.advection.SetFloat("dt", dt)
+	programs.advection.SetFloat("dissipation", config.VELOCITY_DISSIPATION)
+	blit(fbos.velocity.write())
+	fbos.velocity.swap()
+
+	// TODO not support linear filtering
+	programs.advection.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
+	programs.advection.SetInt("uVelocity", int32(fbos.dye.read().attach(1)))
+	programs.advection.SetFloat("dissipation", config.DENSITY_DISSIPATION)
+	blit(fbos.dye.write())
+	//	fbos.dye.swap()
+}
 
 // Splats
 func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
@@ -885,10 +949,10 @@ func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
 		mgl.Vec3{0.5, 0.3, 0.3},
 		mgl.Vec3{0.3, 0.5, 0.3},
 		mgl.Vec3{0.3, 0.3, 0.5},
-	}
 
-	for i := 0; i < 2; i++ {
-		rand.Float32()
+		mgl.Vec3{0.5, 0.3, 0.3},
+		mgl.Vec3{0.3, 0.5, 0.3},
+		mgl.Vec3{0.3, 0.3, 0.5},
 	}
 
 	for _, col := range cols {
@@ -923,7 +987,7 @@ func correctRadius(r float32) float32 {
 	if aspectRatio > 1 {
 		r *= aspectRatio
 	}
-	return r
+	return r + 0.02
 }
 
 // Run simulation
@@ -948,7 +1012,9 @@ func main() {
 	displayMaterial := newMaterial(baseVertexShader, displayShader)
 	displayMaterial.setKeywords([]string{})
 
+	//for i := 0; i < 10; i++ {
 	multipleSplats(programs, fbos, 3)
+	//}
 
 	prev := float32(glfw.GetTime())
 	for !window.ShouldClose() {
