@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"image"
@@ -258,12 +259,14 @@ const baseVertexShader = `
 
     layout (location = 0) in vec2 aPosition;
 
-    out vec2 vUv;
-    out vec2 vL;
-    out vec2 vR;
-    out vec2 vT;
-    out vec2 vB;
-    out vec2 texelSize;
+    out highp vec2 vUv;
+    out highp vec2 vL;
+    out highp vec2 vR;
+    out highp vec2 vT;
+    out highp vec2 vB;
+
+    uniform highp vec2 texelSize;    
+    //out highp vec2 texelSize;
 
     void main () {
         vUv = aPosition * 0.5 + 0.5;
@@ -308,11 +311,12 @@ const vorticityShader = `
 
     out vec4 FragColor;
 
-    in vec2 vUv;
-    in vec2 vL;
-    in vec2 vR;
-    in vec2 vT;
-    in vec2 vB;
+    in highp vec2 vUv;
+    in highp vec2 vL;
+    in highp vec2 vR;
+    in highp vec2 vT;
+    in highp vec2 vB;
+
     uniform sampler2D uVelocity;
     uniform sampler2D uCurl;
     uniform float curl;
@@ -449,7 +453,7 @@ const advectionShader = `
 
     out vec4 FragColor;
 
-    in vec2 vUv;
+    in highp vec2 vUv;
     uniform sampler2D uVelocity;
     uniform sampler2D uSource;
     uniform vec2 texelSize;
@@ -506,11 +510,11 @@ const displayShader = `
 
     out vec4 FragColor;
 
-    in vec2 vUv;
-    in vec2 vL;
-    in vec2 vR;
-    in vec2 vT;
-    in vec2 vB;
+    in highp vec2 vUv;
+    in highp vec2 vL;
+    in highp vec2 vR;
+    in highp vec2 vT;
+    in highp vec2 vB;
     uniform sampler2D uTexture;
     uniform sampler2D uBloom;
     uniform sampler2D uSunrays;
@@ -576,7 +580,7 @@ const splatShader = `
 
     out vec4 FragColor;
 
-    in vec2 vUv;
+    in highp vec2 vUv;
     uniform sampler2D uTarget;
     uniform float aspectRatio;
     uniform vec3 color;
@@ -613,6 +617,7 @@ type framebuffer struct {
 func (f *framebuffer) attach(id uint32) uint32 {
 	gl.ActiveTexture(gl.TEXTURE0 + id)
 	gl.BindTexture(gl.TEXTURE_2D, f.texture)
+
 	return id
 }
 
@@ -739,6 +744,7 @@ type texture struct {
 func (t *texture) attach(id uint32) uint32 {
 	gl.ActiveTexture(gl.TEXTURE0 + id)
 	gl.BindTexture(gl.TEXTURE_2D, t.texture)
+
 	return id
 }
 
@@ -947,7 +953,7 @@ func step(programs *shaders, fbos *framebuffers, dt float32) {
 // Splats
 func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
 	cols := []mgl.Vec3{
-		mgl.Vec3{0.5, 0.3, 0.3},
+		//mgl.Vec3{0.5, 0.3, 0.3},
 		mgl.Vec3{0.3, 0.5, 0.3},
 		mgl.Vec3{0.3, 0.3, 0.5},
 
@@ -1027,6 +1033,8 @@ func main() {
 	multipleSplats(programs, fbos, 3)
 	//}
 
+	time.Sleep(time.Millisecond * 5000) //time.Millisecond * 250)
+
 	lastTime := 0.0
 	numFrames := 0.0
 	prev := float32(glfw.GetTime())
@@ -1034,6 +1042,8 @@ func main() {
 		lastTime, numFrames = DisplayFrameRate(window, "", numFrames, lastTime)
 
 		prev = update(programs, fbos, displayMaterial, prev)
+
+		time.Sleep(time.Millisecond * 0) //time.Millisecond * 250)
 
 		window.SwapBuffers()
 		glfw.PollEvents()
