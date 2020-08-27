@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"math/rand"
 	"runtime"
 	"unsafe"
 
@@ -163,6 +164,20 @@ func (s *Shader) SetVec4(name string, value mgl.Vec4) {
 
 func (s Shader) SetInt(name string, value int32) {
 	gl.Uniform1i(gl.GetUniformLocation(s.ID, gl.Str(name+"\x00")), value)
+}
+
+func (s Shader) SetFloat(name string, value float32) {
+	gl.Uniform1f(gl.GetUniformLocation(s.ID, gl.Str(name+"\x00")), value)
+}
+
+func (s Shader) SetVec2(name string, value mgl.Vec2) {
+	gl.Uniform2fv(gl.GetUniformLocation(s.ID, gl.Str(name+"\x00")),
+		1, &value[0])
+}
+
+func (s Shader) SetVec3(name string, value mgl.Vec3) {
+	gl.Uniform3fv(gl.GetUniformLocation(s.ID, gl.Str(name+"\x00")),
+		1, &value[0])
 }
 
 func MakeShaders(vertexCode, fragmentCode string) *Shader {
@@ -613,7 +628,11 @@ func (df *doubleFramebuffer) read() *framebuffer {
 	return df.fbo1
 }
 
-func (df *doubleFramebuffer) write(f *framebuffer) {
+func (df *doubleFramebuffer) write() *framebuffer {
+	return df.fbo2
+}
+
+func (df *doubleFramebuffer) writeB(f *framebuffer) {
 	df.fbo2 = f
 }
 
@@ -679,6 +698,9 @@ func createFBO(w, h int, internalFormat, format, texType uint32, param int32) *f
 		panic(gl.CheckFramebufferStatus(gl.FRAMEBUFFER))
 		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	}
+
+	log.Println("FBO text", texture)
+
 	return &framebuffer{texture, fbo, w, h, 1.0 / float32(w), 1.0 / float32(h)}
 }
 
@@ -836,7 +858,7 @@ func render(programs *shaders, fbos *framebuffers, displayMaterial *material) {
 	gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 	gl.Enable(gl.BLEND)
 
-	drawColor(programs, mgl.Vec4{0.5, 0.5, 0.5, 1.0})
+	drawColor(programs, mgl.Vec4{0.0, 0.0, 0.0, 1.0})
 	drawDisplay(displayMaterial, fbos)
 }
 
@@ -848,17 +870,68 @@ func drawColor(programs *shaders, col mgl.Vec4) {
 
 func drawDisplay(displayMaterial *material, fbos *framebuffers) {
 	displayMaterial.bind()
-	displayMaterial.activeProgram.SetInt("uTexture", int32(fbos.dye.read().attach(0)))
+
+	//log.Println(fbos.dye.read().attach(0), int32(fbos.dye.read().attach(0)))
+	displayMaterial.activeProgram.SetInt("uTexture",
+		int32(fbos.dye.read().attach(0)))
 	blit(nil)
 }
 
 // Step function
+
+// Splats
+func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
+	cols := []mgl.Vec3{
+		mgl.Vec3{0.5, 0.3, 0.3},
+		mgl.Vec3{0.3, 0.5, 0.3},
+		mgl.Vec3{0.3, 0.3, 0.5},
+	}
+
+	for i := 0; i < 2; i++ {
+		rand.Float32()
+	}
+
+	for _, col := range cols {
+		x := rand.Float32()
+		y := rand.Float32()
+		dx := 1000.0 * (rand.Float32() - 0.5)
+		dy := 1000.0 * (rand.Float32() - 0.5)
+		splat(programs, fbos, x, y, dx, dy, col)
+	}
+}
+
+func splat(programs *shaders, fbos *framebuffers,
+	x, y, dx, dy float32, col mgl.Vec3) {
+
+	programs.splat.Use()
+	programs.splat.SetInt("uTarget", int32(fbos.velocity.read().attach(0)))
+	programs.splat.SetFloat("aspectRatio", float32(width)/float32(height))
+	programs.splat.SetVec2("point", mgl.Vec2{x, y})
+	programs.splat.SetVec3("color", mgl.Vec3{dx, dy, 0.0})
+	programs.splat.SetFloat("radius", correctRadius(config.SPLAT_RADIUS/100.0))
+	blit(fbos.velocity.write())
+	fbos.velocity.swap()
+
+	programs.splat.SetInt("uTarget", int32(fbos.dye.read().attach(0)))
+	programs.splat.SetVec3("color", col)
+	blit(fbos.dye.write())
+	fbos.dye.swap()
+}
+
+func correctRadius(r float32) float32 {
+	aspectRatio := float32(width) / float32(height)
+	if aspectRatio > 1 {
+		r *= aspectRatio
+	}
+	return r
+}
 
 // Run simulation
 func main() {
 	window := initGLFW("Fluid sim", width, height)
 	_ = window
 
+	initBlit()
 	programs := &shaders{
 		MakeShaders(baseVertexShader, curlShader),
 		MakeShaders(baseVertexShader, vorticityShader),
@@ -874,6 +947,8 @@ func main() {
 	fbos := initFramebuffers()
 	displayMaterial := newMaterial(baseVertexShader, displayShader)
 	displayMaterial.setKeywords([]string{})
+
+	multipleSplats(programs, fbos, 3)
 
 	prev := float32(glfw.GetTime())
 	for !window.ShouldClose() {
@@ -895,104 +970,4 @@ func main() {
 			glfw.PollEvents()
 		}
 	*/
-}
-
-// Program to test shader and texture functions
-func test() {
-	// Create window
-	window := initGLFW("Fluid sim", width, height)
-
-	// Create buffers
-	vertices := []float32{
-		//Positions      // Colors       // Texture coords
-		0.5, 0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, // Top right
-		0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, // Bottom right
-		-0.5, -0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, // Bottom left
-		-0.5, 0.5, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, // Top left
-	}
-	indices := []uint32{
-		0, 1, 3, // First triangle
-		1, 2, 3, // Second triangle
-	}
-	var VAO, VBO, EBO uint32
-	gl.GenVertexArrays(1, &VAO)
-	gl.GenBuffers(1, &VBO)
-	gl.GenBuffers(1, &EBO)
-	gl.BindVertexArray(VAO)
-	gl.BindBuffer(gl.ARRAY_BUFFER, VBO)
-	gl.BufferData(gl.ARRAY_BUFFER, len(vertices)*4, gl.Ptr(vertices),
-		gl.STATIC_DRAW)
-	gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, EBO)
-	gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, len(indices)*4,
-		gl.Ptr(indices), gl.STATIC_DRAW)
-	// Specify our position attributes
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 8*4, gl.PtrOffset(0))
-	gl.EnableVertexAttribArray(0)
-	// Specify our color attributes
-	gl.VertexAttribPointer(1, 3, gl.FLOAT, false, 8*4,
-		gl.PtrOffset(3*4))
-	gl.EnableVertexAttribArray(1)
-	// Texture coord attributes
-	gl.VertexAttribPointer(2, 2, gl.FLOAT, false, 8*4,
-		gl.PtrOffset(6*4))
-	gl.EnableVertexAttribArray(2)
-	// Unbind our vertex array so we don't mess with it later
-	gl.BindVertexArray(0)
-
-	// Create material
-	displayMaterial := newMaterial(`
-#version 410 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aColor;
-layout (location = 2) in vec2 aTexCoord;
-
-out vec3 ourColor;
-out vec2 TexCoord;
-
-void main()
-{
-	gl_Position = vec4(aPos, 1.0);
-	ourColor = aColor;
- 	TexCoord = vec2(aTexCoord.x, aTexCoord.y);
-}`, `
-#version 410 core
-out vec4 FragColor;
-
-in vec3 ourColor;
-in vec2 TexCoord;
-
-uniform sampler2D texture1;
-
-void main() 
-{
-    FragColor = texture(texture1, TexCoord);
-}`)
-	displayMaterial.setKeywords([]string{})
-
-	// Load in dithering texture
-	ditheringTexture := createTexture("LDR_LLL1_0.png")
-
-	// Create frame buffers
-	// NOTE we do get a weird issue with the texture being rendered small in the
-	// bottom left corner however I think this might be a view port issue.
-	// When the window resizies this issue corrects itself.
-	// It is a viewport issue.
-	initFramebuffers()
-	gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-
-	for !window.ShouldClose() {
-		gl.ClearColor(0.3, 0.5, 0.3, 1.0)
-		gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-
-		//gl.BindTexture(gl.TEXTURE_2D, ditheringTexture.attach(0))
-
-		ditheringTexture.attach(0)
-		displayMaterial.bind()
-		gl.BindVertexArray(VAO)
-		gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, unsafe.Pointer(nil))
-		gl.BindVertexArray(0)
-
-		window.SwapBuffers()
-		glfw.PollEvents()
-	}
 }
