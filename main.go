@@ -156,6 +156,15 @@ type Shader struct {
 	ID uint32
 }
 
+func (s *Shader) SetVec4(name string, value mgl.Vec4) {
+	gl.Uniform4fv(gl.GetUniformLocation(s.ID, gl.Str(name+"\x00")),
+		1, &value[0])
+}
+
+func (s Shader) SetInt(name string, value int32) {
+	gl.Uniform1i(gl.GetUniformLocation(s.ID, gl.Str(name+"\x00")), value)
+}
+
 func MakeShaders(vertexCode, fragmentCode string) *Shader {
 	// Compile the shaders
 	vertexShader := gl.CreateShader(gl.VERTEX_SHADER)
@@ -163,14 +172,14 @@ func MakeShaders(vertexCode, fragmentCode string) *Shader {
 	defer freeVertex()
 	gl.ShaderSource(vertexShader, 1, shaderSource, nil)
 	gl.CompileShader(vertexShader)
-	checkCompileErrors(vertexShader, "VERTEX")
+	checkCompileErrors(vertexShader, "VERTEX", vertexCode)
 
 	fragmentShader := gl.CreateShader(gl.FRAGMENT_SHADER)
 	shaderSource, freeFragment := gl.Strs(fragmentCode + "\x00")
 	defer freeFragment()
 	gl.ShaderSource(fragmentShader, 1, shaderSource, nil)
 	gl.CompileShader(fragmentShader)
-	checkCompileErrors(fragmentShader, "FRAGMENT")
+	checkCompileErrors(fragmentShader, "FRAGMENT", fragmentCode)
 
 	// Create a shader program
 	ID := gl.CreateProgram()
@@ -178,7 +187,7 @@ func MakeShaders(vertexCode, fragmentCode string) *Shader {
 	gl.AttachShader(ID, fragmentShader)
 	gl.LinkProgram(ID)
 
-	checkCompileErrors(ID, "PROGRAM")
+	checkCompileErrors(ID, "PROGRAM", "")
 
 	// Delete shaders
 	gl.DeleteShader(vertexShader)
@@ -187,7 +196,7 @@ func MakeShaders(vertexCode, fragmentCode string) *Shader {
 	return &Shader{ID: ID}
 }
 
-func checkCompileErrors(shader uint32, shaderType string) {
+func checkCompileErrors(shader uint32, shaderType, source string) {
 	var success int32
 	var infoLog [1024]byte
 
@@ -206,12 +215,25 @@ func checkCompileErrors(shader uint32, shaderType string) {
 	if success != 1 {
 		test := &success
 		errorFunc(shader, 1024, test, (*uint8)(unsafe.Pointer(&infoLog)))
-		log.Fatalln(stageMessage + shaderType + "|" + string(infoLog[:1024]) + "|")
+		log.Fatalln("!!!!" + source + stageMessage + shaderType + "|" + string(infoLog[:1024]) + "|")
 	}
 }
 
 func (s Shader) Use() {
 	gl.UseProgram(s.ID)
+}
+
+type shaders struct {
+	curl             *Shader
+	vorticity        *Shader
+	divergence       *Shader
+	clear            *Shader
+	pressure         *Shader
+	gradientSubtract *Shader
+	advection        *Shader
+	color            *Shader
+	display          *Shader
+	splat            *Shader
 }
 
 const baseVertexShader = `
@@ -784,20 +806,22 @@ func blit(target *framebuffer) {
 	gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, gl.PtrOffset(0))
 }
 
-func update(lastUpdateTime float32) {
-	for {
-		dt, lastUpdateTime := calcDeltaTime(lastUpdateTime)
+func update(programs *shaders, fbos *framebuffers,
+	displayMaterial *material, lastUpdateTime float32) float32 {
 
-		// TODO resize
+	dt, lastUpdateTime := calcDeltaTime(lastUpdateTime)
 
-		//updateColors(dt)
+	_ = dt
+	// TODO resize
+	//updateColors(dt)
+	// TODO inputs (or maybe not)
 
-		// TODO inputs
+	//step(dt)
+	render(programs, fbos, displayMaterial)
 
-		//step(dt)
-		//render()
-	}
+	return lastUpdateTime
 }
+
 func calcDeltaTime(lastUpdateTime float32) (float32, float32) {
 	now := float32(glfw.GetTime())
 	dt := (now - lastUpdateTime) / 1000
@@ -808,21 +832,24 @@ func calcDeltaTime(lastUpdateTime float32) (float32, float32) {
 	return dt, now
 }
 
-func render() {
+func render(programs *shaders, fbos *framebuffers, displayMaterial *material) {
 	gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
 	gl.Enable(gl.BLEND)
 
-	//drawColor(nil, normalizeColor(config)) // TODO
-
-	drawDisplay()
+	drawColor(programs, mgl.Vec4{0.5, 0.5, 0.5, 1.0})
+	drawDisplay(displayMaterial, fbos)
 }
 
-func drawDisplay() {
-	//displayMaterial.bind()
+func drawColor(programs *shaders, col mgl.Vec4) {
+	programs.color.Use()
+	programs.color.SetVec4("color", col)
+	blit(nil)
+}
 
-	//gl.uniform1i(displayMaterial.uniforms.uTexture, dye.read.attach(0));
-
-	//blit(target)
+func drawDisplay(displayMaterial *material, fbos *framebuffers) {
+	displayMaterial.bind()
+	displayMaterial.activeProgram.SetInt("uTexture", int32(fbos.dye.read().attach(0)))
+	blit(nil)
 }
 
 // Step function
@@ -832,49 +859,38 @@ func main() {
 	window := initGLFW("Fluid sim", width, height)
 	_ = window
 
-	/*
-		MakeShaders(baseVertexShader, curlShader)
-		MakeShaders(baseVertexShader, vorticityShader)
-		MakeShaders(baseVertexShader, divergenceShader)
-		MakeShaders(baseVertexShader, clearShader)
-		MakeShaders(baseVertexShader, pressureShader)
-		MakeShaders(baseVertexShader, gradientSubtractShader)
-		MakeShaders(baseVertexShader, advectionShader)
-		MakeShaders(baseVertexShader, colorShader)
-		MakeShaders(baseVertexShader, displayShader)
-		MakeShaders(baseVertexShader, splatShader)
-	*/
+	programs := &shaders{
+		MakeShaders(baseVertexShader, curlShader),
+		MakeShaders(baseVertexShader, vorticityShader),
+		MakeShaders(baseVertexShader, divergenceShader),
+		MakeShaders(baseVertexShader, clearShader),
+		MakeShaders(baseVertexShader, pressureShader),
+		MakeShaders(baseVertexShader, gradientSubtractShader),
+		MakeShaders(baseVertexShader, advectionShader),
+		MakeShaders(baseVertexShader, colorShader),
+		MakeShaders(baseVertexShader, displayShader),
+		MakeShaders(baseVertexShader, splatShader),
+	}
+	fbos := initFramebuffers()
+	displayMaterial := newMaterial(baseVertexShader, displayShader)
+	displayMaterial.setKeywords([]string{})
+
+	prev := float32(glfw.GetTime())
+	for !window.ShouldClose() {
+		prev = update(programs, fbos, displayMaterial, prev)
+
+		window.SwapBuffers()
+		glfw.PollEvents()
+	}
 
 	//test()
 	/*
-		// Create window
-		window := initGLFW("Fluid sim", 500, 500)
-
-		// Create shaders
-		// TODO
-
-		// Create material
-		displayMaterial := newMaterial("place", "place")
-		log.Println(displayMaterial)
-
 		// Load in dithering texture
 		ditheringTexture := createTexture("LDR_LLL1_0.png")
-		log.Println(ditheringTexture)
-
-		// Create frame buffers
 
 		for !window.ShouldClose() {
 			gl.ClearColor(0.3, 0.5, 0.3, 1.0)
 			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-
-			// update parms
-
-			// Wait / deal with dt
-
-			// Step func
-
-			// Render
-
 			window.SwapBuffers()
 			glfw.PollEvents()
 		}
