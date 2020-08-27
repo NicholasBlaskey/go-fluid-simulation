@@ -98,15 +98,15 @@ var config = struct {
 	SUNRAYS_RESOLUTION   int
 	SUNRAYS_WEIGHT       float32
 }{
-	SIM_RESOLUTION:       512, // 128,
+	SIM_RESOLUTION:       512, //128,
 	DYE_RESOLUTION:       512, //1024,
-	CAPTURE_RESOLUTION:   512, //512,
-	DENSITY_DISSIPATION:  1,
+	CAPTURE_RESOLUTION:   512,
+	DENSITY_DISSIPATION:  0, //1,
 	VELOCITY_DISSIPATION: 0.2,
 	PRESSURE:             0.8,
 	PRESSURE_ITERATIONS:  20,
 	CURL:                 30.0,
-	SPLAT_RADIUS:         0.25,
+	SPLAT_RADIUS:         0.85,
 	SPLAT_FORCE:          6000,
 	SHADING:              true,
 	COLORFUL:             true,
@@ -944,7 +944,7 @@ func step(programs *shaders, fbos *framebuffers, dt float32) {
 
 	// TODO not support linear filtering
 	programs.advection.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
-	programs.advection.SetInt("uVelocity", int32(fbos.dye.read().attach(1)))
+	programs.advection.SetInt("uSource", int32(fbos.dye.read().attach(1)))
 	programs.advection.SetFloat("dissipation", config.DENSITY_DISSIPATION)
 	blit(fbos.dye.write())
 	fbos.dye.swap()
@@ -953,9 +953,9 @@ func step(programs *shaders, fbos *framebuffers, dt float32) {
 // Splats
 func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
 	cols := []mgl.Vec3{
-		//mgl.Vec3{0.5, 0.3, 0.3},
-		mgl.Vec3{0.3, 0.5, 0.3},
-		mgl.Vec3{0.3, 0.3, 0.5},
+		mgl.Vec3{0.9, 0.3, 0.3},
+		mgl.Vec3{0.3, 0.9, 0.3},
+		mgl.Vec3{0.5, 0.5, 0.9},
 
 		/*
 			mgl.Vec3{0.5, 0.3, 0.3},
@@ -1032,8 +1032,6 @@ func main() {
 	//for i := 0; i < 10; i++ {
 	multipleSplats(programs, fbos, 3)
 	//}
-
-	time.Sleep(time.Millisecond * 5000) //time.Millisecond * 250)
 
 	lastTime := 0.0
 	numFrames := 0.0
