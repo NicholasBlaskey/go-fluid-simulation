@@ -101,8 +101,8 @@ var config = struct {
 	SIM_RESOLUTION:       512, //128,
 	DYE_RESOLUTION:       512, //1024,
 	CAPTURE_RESOLUTION:   512,
-	DENSITY_DISSIPATION:  0, //1,
-	VELOCITY_DISSIPATION: 0.2,
+	DENSITY_DISSIPATION:  0.0, //1,
+	VELOCITY_DISSIPATION: 0.5,
 	PRESSURE:             0.8,
 	PRESSURE_ITERATIONS:  20,
 	CURL:                 30.0,
@@ -927,7 +927,7 @@ func step(programs *shaders, fbos *framebuffers, dt float32) {
 	programs.gradientSubtract.Use()
 	programs.gradientSubtract.SetVec2("texelSize", texelSize)
 	programs.gradientSubtract.SetInt("uPressure", int32(fbos.pressure.read().attach(0)))
-	programs.gradientSubtract.SetInt("uVelocity", int32(fbos.velocity.read().attach(0)))
+	programs.gradientSubtract.SetInt("uVelocity", int32(fbos.velocity.read().attach(1)))
 	blit(fbos.velocity.write())
 	fbos.velocity.swap()
 
@@ -1036,8 +1036,14 @@ func main() {
 	lastTime := 0.0
 	numFrames := 0.0
 	prev := float32(glfw.GetTime())
+	i := 0
 	for !window.ShouldClose() {
 		lastTime, numFrames = DisplayFrameRate(window, "", numFrames, lastTime)
+		i += 1
+
+		if i%100 == 0 {
+			multipleSplats(programs, fbos, 3)
+		}
 
 		prev = update(programs, fbos, displayMaterial, prev)
 
