@@ -23,11 +23,6 @@ func init() {
 	runtime.LockOSThread()
 }
 
-const (
-	width  = 512 //1920 //512
-	height = 512 //1080 //512
-)
-
 // We will move everything to its own module later on
 // Create window
 func initGLFW(windowTitle string, width, height int) *glfw.Window {
@@ -59,8 +54,10 @@ func initGLFW(windowTitle string, width, height int) *glfw.Window {
 	return window
 }
 
-func framebuffer_size_callback(w *glfw.Window, width int, height int) {
-	gl.Viewport(0, 0, int32(width), int32(height))
+func framebuffer_size_callback(w *glfw.Window, widthParam int, heightParam int) {
+	width = widthParam
+	height = heightParam
+	fbos = initFramebuffers(fbos)
 }
 
 func keyCallback(window *glfw.Window, key glfw.Key, scancode int,
@@ -104,11 +101,11 @@ var config = struct {
 	SUNRAYS_RESOLUTION   int
 	SUNRAYS_WEIGHT       float32
 }{
-	SIM_RESOLUTION:       512,  //128,
-	DYE_RESOLUTION:       1024, //512,
+	SIM_RESOLUTION:       256, //512,
+	DYE_RESOLUTION:       1024,
 	CAPTURE_RESOLUTION:   512,
 	DENSITY_DISSIPATION:  0.0, //1,
-	VELOCITY_DISSIPATION: 0.3,
+	VELOCITY_DISSIPATION: 0.0,
 	PRESSURE:             0.8,
 	PRESSURE_ITERATIONS:  20,
 	CURL:                 30.0,
@@ -395,6 +392,21 @@ const clearShader = `
         FragColor = value * texture2D(uTexture, vUv);
     }
 `
+const copyShader = `
+    #version 410 core
+
+    precision mediump float;
+    precision mediump sampler2D;
+
+    out vec4 FragColor;
+
+    in highp vec2 vUv;
+    uniform sampler2D uTexture;
+
+    void main () {
+        FragColor = texture2D(uTexture, vUv);
+    }
+`
 
 const pressureShader = `
     #version 410 core
@@ -654,15 +666,10 @@ func (df *doubleFramebuffer) swap() {
 	df.fbo2 = temp
 }
 
-func initFramebuffers() *framebuffers {
+func initFramebuffers(fbos *framebuffers) *framebuffers {
 	simResX, simResY := getResolution(config.SIM_RESOLUTION)
 	dyeResX, dyeResY := getResolution(config.DYE_RESOLUTION)
 
-	//log.Println(simResX, simResY, dyeResX, dyeResY)
-
-	// Assuming we support this?
-	// gl.getExtension('EXT_color_buffer_float');
-	// supportLinearFiltering = gl.getExtension('OES_texture_float_linear');
 	texType := uint32(gl.HALF_FLOAT)
 	rgbaInt, rgba := uint32(gl.RGBA16F), uint32(gl.RGBA)
 	rgInt, rg := uint32(gl.RG16F), uint32(gl.RG)
@@ -671,15 +678,20 @@ func initFramebuffers() *framebuffers {
 
 	gl.Disable(gl.BLEND)
 
-	dye := createDoubleFBO(dyeResX, dyeResY, rgbaInt, rgba, texType, filtering)
-	velocity := createDoubleFBO(simResX, simResY, rgInt, rg, texType, filtering)
+	var dye, velocity *doubleFramebuffer
+	if fbos != nil {
+		dye = resizeDoubleFBO(fbos.dye, dyeResX, dyeResY, rgbaInt,
+			rgba, texType, filtering)
+		velocity = resizeDoubleFBO(fbos.velocity, simResX, simResY,
+			rgInt, rg, texType, filtering)
+	} else {
+		dye = createDoubleFBO(dyeResX, dyeResY, rgbaInt, rgba, texType, filtering)
+		velocity = createDoubleFBO(simResX, simResY, rgInt, rg, texType, filtering)
+	}
 
 	divergence := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
 	curl := createFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
 	pressure := createDoubleFBO(simResX, simResY, rInt, r, texType, gl.NEAREST)
-
-	//divergence :=
-	// TODO states
 
 	return &framebuffers{dye, velocity, divergence, curl, pressure}
 }
@@ -723,6 +735,34 @@ func createDoubleFBO(w, h int, internalFormat, format,
 	fbo2 := createFBO(w, h, internalFormat, format, texType, param)
 
 	return &doubleFramebuffer{w, h, fbo1.texelSizeX, fbo2.texelSizeY, fbo1, fbo2}
+}
+
+func resizeFBO(target *framebuffer, w, h int, internalFormat, format,
+	texType uint32, param int32) *framebuffer {
+
+	newFBO := createFBO(w, h, internalFormat, format, texType, param)
+	copyProgram.Use()
+	copyProgram.SetInt("uTexture", int32(target.attach(0)))
+	blit(newFBO)
+
+	return newFBO
+}
+
+func resizeDoubleFBO(target *doubleFramebuffer, w, h int, internalFormat,
+	format, texType uint32, param int32) *doubleFramebuffer {
+
+	if target.width == w && target.height == h {
+		return target
+	}
+	target.fbo1 = resizeFBO(target.read(), w, h, internalFormat,
+		format, texType, param)
+	target.writeB(createFBO(w, h, internalFormat, format, texType, param))
+	target.width = w
+	target.height = h
+	target.texelSizeX = 1.0 / float32(w)
+	target.texelSizeY = 1.0 / float32(h)
+
+	return target
 }
 
 func getResolution(resolution int) (int, int) {
@@ -824,7 +864,7 @@ func initBlit() {
 
 func blit(target *framebuffer) {
 	if target == nil {
-		gl.Viewport(0, 0, width, height)
+		gl.Viewport(0, 0, int32(width), int32(height))
 		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	} else {
 		gl.Viewport(0, 0, int32(target.width), int32(target.height))
@@ -959,32 +999,22 @@ func step(programs *shaders, fbos *framebuffers, dt float32) {
 
 // Splats
 func multipleSplats(programs *shaders, fbos *framebuffers, n int) {
-	cols := []mgl.Vec3{
-		mgl.Vec3{0.9, 0.3, 0.3},
-		mgl.Vec3{0.3, 0.9, 0.3},
-		mgl.Vec3{0.5, 0.5, 0.9},
+	/*
+		cols := []mgl.Vec3{
+			mgl.Vec3{0.9, 0.3, 0.3},
+			mgl.Vec3{0.3, 0.9, 0.3},
+			mgl.Vec3{0.5, 0.5, 0.9},
+		}
+	*/
 
-		/*
-			mgl.Vec3{0.5, 0.3, 0.3},
-			mgl.Vec3{0.3, 0.5, 0.3},
-			mgl.Vec3{0.3, 0.3, 0.5},
-
-			mgl.Vec3{0.5, 0.3, 0.3},
-			mgl.Vec3{0.3, 0.5, 0.3},
-			mgl.Vec3{0.3, 0.3, 0.5},
-
-			mgl.Vec3{0.5, 0.3, 0.3},
-			mgl.Vec3{0.3, 0.5, 0.3},
-			mgl.Vec3{0.3, 0.3, 0.5},
-		*/
-	}
-
-	for _, col := range cols {
+	//for _, col := range cols {
+	for i := 0; i < n; i++ {
 		x := rand.Float32()
 		y := rand.Float32()
 		dx := 1000.0 * (rand.Float32() - 0.5)
 		dy := 1000.0 * (rand.Float32() - 0.5)
-		splat(programs, fbos, x, y, dx, dy, col)
+		splat(programs, fbos, x, y, dx, dy,
+			mgl.Vec3{rand.Float32(), rand.Float32(), rand.Float32()})
 	}
 }
 
@@ -1014,6 +1044,13 @@ func correctRadius(r float32) float32 {
 	return r
 }
 
+var (
+	fbos        *framebuffers = nil
+	width                     = 512 //1920 //512
+	height                    = 512 //1080 //512
+	copyProgram *Shader       = nil
+)
+
 // Run simulation
 func main() {
 	window := initGLFW("Fluid sim", width, height)
@@ -1022,6 +1059,7 @@ func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	initBlit()
+	copyProgram = MakeShaders(baseVertexShader, copyShader)
 	programs := &shaders{
 		MakeShaders(baseVertexShader, curlShader),
 		MakeShaders(baseVertexShader, vorticityShader),
@@ -1034,7 +1072,7 @@ func main() {
 		MakeShaders(baseVertexShader, displayShader),
 		MakeShaders(baseVertexShader, splatShader),
 	}
-	fbos := initFramebuffers()
+	fbos = initFramebuffers(nil)
 	displayMaterial := newMaterial(baseVertexShader, displayShader)
 	displayMaterial.setKeywords([]string{})
 
@@ -1061,19 +1099,6 @@ func main() {
 		window.SwapBuffers()
 		glfw.PollEvents()
 	}
-
-	//test()
-	/*
-		// Load in dithering texture
-		ditheringTexture := createTexture("LDR_LLL1_0.png")
-
-		for !window.ShouldClose() {
-			gl.ClearColor(0.3, 0.5, 0.3, 1.0)
-			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-			window.SwapBuffers()
-			glfw.PollEvents()
-		}
-	*/
 }
 
 func DisplayFrameRate(window *glfw.Window, title string,
