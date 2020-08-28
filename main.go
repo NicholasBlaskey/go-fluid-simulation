@@ -24,8 +24,8 @@ func init() {
 }
 
 const (
-	width  = 512
-	height = 512
+	width  = 512 //1920 //512
+	height = 512 //1080 //512
 )
 
 // We will move everything to its own module later on
@@ -50,6 +50,8 @@ func initGLFW(windowTitle string, width, height int) *glfw.Window {
 		glfw.FramebufferSizeCallback(framebuffer_size_callback))
 	window.SetKeyCallback(keyCallback)
 
+	window.SetCursorPosCallback(glfw.CursorPosCallback(mouse_callback))
+
 	if err := gl.Init(); err != nil {
 		panic(err)
 	}
@@ -67,6 +69,10 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int,
 	if key == glfw.KeyEscape && action == glfw.Press {
 		window.SetShouldClose(true)
 	}
+}
+
+func mouse_callback(w *glfw.Window, xPos float64, yPos float64) {
+	fmt.Println(xPos, yPos)
 }
 
 // Set parameters (Perhaps better to var this but will keep same name for now)
@@ -98,11 +104,11 @@ var config = struct {
 	SUNRAYS_RESOLUTION   int
 	SUNRAYS_WEIGHT       float32
 }{
-	SIM_RESOLUTION:       512, //128,
-	DYE_RESOLUTION:       512, //1024,
+	SIM_RESOLUTION:       512,  //128,
+	DYE_RESOLUTION:       1024, //512,
 	CAPTURE_RESOLUTION:   512,
 	DENSITY_DISSIPATION:  0.0, //1,
-	VELOCITY_DISSIPATION: 0.5,
+	VELOCITY_DISSIPATION: 0.3,
 	PRESSURE:             0.8,
 	PRESSURE_ITERATIONS:  20,
 	CURL:                 30.0,
@@ -817,10 +823,11 @@ func initBlit() {
 }
 
 func blit(target *framebuffer) {
-	gl.Viewport(0, 0, width, height)
 	if target == nil {
+		gl.Viewport(0, 0, width, height)
 		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 	} else {
+		gl.Viewport(0, 0, int32(target.width), int32(target.height))
 		gl.BindFramebuffer(gl.FRAMEBUFFER, target.fbo)
 	}
 
@@ -1012,6 +1019,8 @@ func main() {
 	window := initGLFW("Fluid sim", width, height)
 	_ = window
 
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	initBlit()
 	programs := &shaders{
 		MakeShaders(baseVertexShader, curlShader),
@@ -1029,9 +1038,9 @@ func main() {
 	displayMaterial := newMaterial(baseVertexShader, displayShader)
 	displayMaterial.setKeywords([]string{})
 
-	//for i := 0; i < 10; i++ {
-	multipleSplats(programs, fbos, 3)
-	//}
+	for i := 0; i < 5; i++ {
+		multipleSplats(programs, fbos, 3)
+	}
 
 	lastTime := 0.0
 	numFrames := 0.0
@@ -1041,7 +1050,7 @@ func main() {
 		lastTime, numFrames = DisplayFrameRate(window, "", numFrames, lastTime)
 		i += 1
 
-		if i%100 == 0 {
+		if i%1000 == 0 {
 			multipleSplats(programs, fbos, 3)
 		}
 
