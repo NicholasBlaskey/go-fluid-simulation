@@ -917,7 +917,7 @@ type inPointer struct {
 	color         mgl.Vec3
 }
 
-var pointer = &inPointer{0, 0, 0, 0, 0, 0, false, mgl.Vec3{0.5, 0.9, 0.5}}
+var pointer = &inPointer{0, 0, 0, 0, 0, 0, false, mgl.Vec3{0.05, 0.05, 0.10}}
 
 func mouse_callback(w *glfw.Window, xPos float64, yPos float64) {
 	updatePointerMoveData(pointer, float32(xPos), float32(yPos))
@@ -928,10 +928,29 @@ func updatePointerMoveData(pointer *inPointer, posX, posY float32) {
 	pointer.prevTexcoordY = pointer.texcoordY
 	pointer.texcoordX = posX / float32(width)
 	pointer.texcoordY = 1.0 - posY/float32(height)
-	pointer.deltaX = pointer.texcoordX - pointer.prevTexcoordX // TODO normalize
-	pointer.deltaY = pointer.texcoordY - pointer.prevTexcoordY
+	pointer.deltaX = correctDeltaX(pointer.texcoordX -
+		pointer.prevTexcoordX)
+	pointer.deltaY = correctDeltaY(pointer.texcoordY -
+		pointer.prevTexcoordY)
+
 	pointer.moved = math.Abs(float64(pointer.deltaX)) > 0 ||
 		math.Abs(float64(pointer.deltaY)) > 0
+}
+
+func correctDeltaX(delta float32) float32 {
+	aspectRatio := float32(width) / float32(height)
+	if aspectRatio < 1 {
+		delta *= aspectRatio
+	}
+	return delta
+}
+
+func correctDeltaY(delta float32) float32 {
+	aspectRatio := float32(width) / float32(height)
+	if aspectRatio < 1 {
+		delta /= aspectRatio
+	}
+	return delta
 }
 
 func applyInputs(programs *shaders, fbos *framebuffers) {
