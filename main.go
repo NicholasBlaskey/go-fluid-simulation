@@ -67,6 +67,12 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int,
 	if key == glfw.KeyEscape && action == glfw.Press {
 		window.SetShouldClose(true)
 	}
+
+	if key == glfw.KeySpace {
+		if action == glfw.Press || action == glfw.Repeat {
+			multipleSplats(programs, fbos, 10)
+		}
+	}
 }
 
 // Set parameters (Perhaps better to var this but will keep same name for now)
@@ -917,7 +923,7 @@ type inPointer struct {
 	color         mgl.Vec3
 }
 
-var pointer = &inPointer{0, 0, 0, 0, 0, 0, false, mgl.Vec3{0.05, 0.05, 0.10}}
+var pointer = &inPointer{0, 0, 0, 0, 0, 0, false, mgl.Vec3{0.10, 0.10, 0.05}}
 
 func mouse_callback(w *glfw.Window, xPos float64, yPos float64) {
 	updatePointerMoveData(pointer, float32(xPos), float32(yPos))
@@ -957,10 +963,15 @@ func applyInputs(programs *shaders, fbos *framebuffers) {
 	if pointer.moved {
 		pointer.moved = false
 
+		brightScale := float32(0.15)
+
 		dx := pointer.deltaX * config.SPLAT_FORCE
 		dy := pointer.deltaY * config.SPLAT_FORCE
 		splat(programs, fbos, pointer.texcoordX,
-			pointer.texcoordY, dx, dy, pointer.color)
+			pointer.texcoordY, dx, dy,
+			mgl.Vec3{rand.Float32() * brightScale,
+				rand.Float32() * brightScale,
+				rand.Float32() * brightScale}) //pointer.color)
 	}
 }
 
@@ -1101,6 +1112,7 @@ func correctRadius(r float32) float32 {
 }
 
 var (
+	programs    *shaders      = nil
 	fbos        *framebuffers = nil
 	width                     = 512 //1920 //512
 	height                    = 512 //1080 //512
@@ -1116,7 +1128,7 @@ func main() {
 
 	initBlit()
 	copyProgram = MakeShaders(baseVertexShader, copyShader)
-	programs := &shaders{
+	programs = &shaders{
 		MakeShaders(baseVertexShader, curlShader),
 		MakeShaders(baseVertexShader, vorticityShader),
 		MakeShaders(baseVertexShader, divergenceShader),
