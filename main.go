@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"runtime"
 	"time"
@@ -68,10 +69,6 @@ func keyCallback(window *glfw.Window, key glfw.Key, scancode int,
 	}
 }
 
-func mouse_callback(w *glfw.Window, xPos float64, yPos float64) {
-	fmt.Println(xPos, yPos)
-}
-
 // Set parameters (Perhaps better to var this but will keep same name for now)
 // Actually move to its own module later on
 var config = struct {
@@ -84,7 +81,7 @@ var config = struct {
 	PRESSURE_ITERATIONS  int
 	CURL                 float32
 	SPLAT_RADIUS         float32
-	SPLAT_FORCE          int
+	SPLAT_FORCE          float32
 	SHADING              bool
 	COLORFUL             bool
 	COLOR_UPDATE_SPEED   int
@@ -104,7 +101,7 @@ var config = struct {
 	SIM_RESOLUTION:       256, //512,
 	DYE_RESOLUTION:       1024,
 	CAPTURE_RESOLUTION:   512,
-	DENSITY_DISSIPATION:  0.0, //1,
+	DENSITY_DISSIPATION:  1.0, //0,
 	VELOCITY_DISSIPATION: 0.0,
 	PRESSURE:             0.8,
 	PRESSURE_ITERATIONS:  20,
@@ -887,10 +884,11 @@ func update(programs *shaders, fbos *framebuffers,
 
 	dt, lastUpdateTime := calcDeltaTime(lastUpdateTime)
 
-	_ = dt
 	// TODO resize
 	//updateColors(dt)
 	// TODO inputs (or maybe not)
+
+	applyInputs(programs, fbos)
 
 	step(programs, fbos, dt)
 	render(programs, fbos, displayMaterial)
@@ -906,6 +904,45 @@ func calcDeltaTime(lastUpdateTime float32) (float32, float32) {
 	}
 
 	return dt, now
+}
+
+type inPointer struct {
+	texcoordX     float32
+	texcoordY     float32
+	prevTexcoordX float32
+	prevTexcoordY float32
+	deltaX        float32
+	deltaY        float32
+	moved         bool
+	color         mgl.Vec3
+}
+
+var pointer = &inPointer{0, 0, 0, 0, 0, 0, false, mgl.Vec3{0.5, 0.9, 0.5}}
+
+func mouse_callback(w *glfw.Window, xPos float64, yPos float64) {
+	updatePointerMoveData(pointer, float32(xPos), float32(yPos))
+}
+
+func updatePointerMoveData(pointer *inPointer, posX, posY float32) {
+	pointer.prevTexcoordX = pointer.texcoordX
+	pointer.prevTexcoordY = pointer.texcoordY
+	pointer.texcoordX = posX / float32(width)
+	pointer.texcoordY = 1.0 - posY/float32(height)
+	pointer.deltaX = pointer.texcoordX - pointer.prevTexcoordX // TODO normalize
+	pointer.deltaY = pointer.texcoordY - pointer.prevTexcoordY
+	pointer.moved = math.Abs(float64(pointer.deltaX)) > 0 ||
+		math.Abs(float64(pointer.deltaY)) > 0
+}
+
+func applyInputs(programs *shaders, fbos *framebuffers) {
+	if pointer.moved {
+		pointer.moved = false
+
+		dx := pointer.deltaX * config.SPLAT_FORCE
+		dy := pointer.deltaY * config.SPLAT_FORCE
+		splat(programs, fbos, pointer.texcoordX,
+			pointer.texcoordY, dx, dy, pointer.color)
+	}
 }
 
 func render(programs *shaders, fbos *framebuffers, displayMaterial *material) {
