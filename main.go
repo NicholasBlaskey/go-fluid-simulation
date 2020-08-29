@@ -9,6 +9,12 @@ import (
 	"time"
 	"unsafe"
 
+	"bufio"
+	"io"
+	"os/exec"
+	"strconv"
+	"strings"
+
 	"image"
 	"image/draw"
 	_ "image/png"
@@ -46,7 +52,7 @@ func initGLFW(windowTitle string, width, height int) *glfw.Window {
 		glfw.FramebufferSizeCallback(framebuffer_size_callback))
 	window.SetKeyCallback(keyCallback)
 
-	window.SetCursorPosCallback(glfw.CursorPosCallback(mouse_callback))
+	//	window.SetCursorPosCallback(glfw.CursorPosCallback(mouse_callback))
 
 	if err := gl.Init(); err != nil {
 		panic(err)
@@ -107,13 +113,13 @@ var config = struct {
 	SIM_RESOLUTION:       256, //512,
 	DYE_RESOLUTION:       1024,
 	CAPTURE_RESOLUTION:   512,
-	DENSITY_DISSIPATION:  1.0, //0,
-	VELOCITY_DISSIPATION: 0.0,
+	DENSITY_DISSIPATION:  1.0, //1.0,
+	VELOCITY_DISSIPATION: 0.5, //0.0
 	PRESSURE:             0.8,
-	PRESSURE_ITERATIONS:  20,
+	PRESSURE_ITERATIONS:  50, //20,
 	CURL:                 30.0,
-	SPLAT_RADIUS:         0.85,
-	SPLAT_FORCE:          6000,
+	SPLAT_RADIUS:         0.50, //0.85,
+	SPLAT_FORCE:          7000, //6000
 	SHADING:              true,
 	COLORFUL:             true,
 	COLOR_UPDATE_SPEED:   10,
@@ -925,8 +931,63 @@ type inPointer struct {
 
 var pointer = &inPointer{0, 0, 0, 0, 0, 0, false, mgl.Vec3{0.10, 0.10, 0.05}}
 
+/*
 func mouse_callback(w *glfw.Window, xPos float64, yPos float64) {
+	fmt.Println(xPos, yPos)
 	updatePointerMoveData(pointer, float32(xPos), float32(yPos))
+}
+*/
+
+const (
+	touchXMax = 3840
+	touchYMax = 1932
+)
+
+func readTouchPad(inputNum string) {
+	cmd := exec.Command("evtest")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		panic(err)
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		panic(err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		panic(err)
+	}
+	r := bufio.NewReader(stdout)
+	//go func() {
+	io.WriteString(stdin, inputNum)
+	stdin.Close()
+	//}()
+
+	x, y := -1, -1
+	//i := 0
+	for {
+		in, _ := r.ReadString('\n')
+
+		if strings.Contains(in, "(ABS_X),") {
+			split := strings.Split(in, " ")
+			x, _ = strconv.Atoi(strings.Trim(split[len(split)-1], "\n "))
+		} else if strings.Contains(in, "(ABS_Y),") {
+			split := strings.Split(in, " ")
+			y, _ = strconv.Atoi(strings.Trim(split[len(split)-1], "\n "))
+		}
+
+		if x == -1 || y == -1 {
+			continue
+		}
+
+		//i += 1
+		//if i == 10 {
+		updatePointerMoveData(pointer, (float32(x)/touchXMax)*float32(width),
+			(float32(y)/touchYMax)*float32(height))
+		//	i = 0
+		//}
+		x, y = -1, -1
+	}
 }
 
 func updatePointerMoveData(pointer *inPointer, posX, posY float32) {
@@ -939,8 +1000,8 @@ func updatePointerMoveData(pointer *inPointer, posX, posY float32) {
 	pointer.deltaY = correctDeltaY(pointer.texcoordY -
 		pointer.prevTexcoordY)
 
-	pointer.moved = math.Abs(float64(pointer.deltaX)) > 0 ||
-		math.Abs(float64(pointer.deltaY)) > 0
+	pointer.moved = math.Abs(float64(pointer.deltaX)) > 0.0 ||
+		math.Abs(float64(pointer.deltaY)) > 0.0
 }
 
 func correctDeltaX(delta float32) float32 {
@@ -963,7 +1024,7 @@ func applyInputs(programs *shaders, fbos *framebuffers) {
 	if pointer.moved {
 		pointer.moved = false
 
-		brightScale := float32(0.15)
+		brightScale := float32(1.0)
 
 		dx := pointer.deltaX * config.SPLAT_FORCE
 		dy := pointer.deltaY * config.SPLAT_FORCE
@@ -971,7 +1032,10 @@ func applyInputs(programs *shaders, fbos *framebuffers) {
 			pointer.texcoordY, dx, dy,
 			mgl.Vec3{rand.Float32() * brightScale,
 				rand.Float32() * brightScale,
-				rand.Float32() * brightScale}) //pointer.color)
+				rand.Float32() * brightScale})
+		//mgl.Vec3{rand.Float32() * brightScale * 0.3,
+		//	rand.Float32() * brightScale * 0.5,
+		//	rand.Float32() * brightScale * 0.3}) //pointer.color)
 	}
 }
 
@@ -1147,6 +1211,8 @@ func main() {
 	for i := 0; i < 5; i++ {
 		multipleSplats(programs, fbos, 3)
 	}
+
+	go readTouchPad("8") // change here
 
 	lastTime := 0.0
 	numFrames := 0.0
